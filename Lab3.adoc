@@ -1,11 +1,9 @@
 = Отчет по лабораторной работе №3
-Анисимова А.М.    <КЭ-413>
-:imagesdir: images
 :toc:
 :toc-title: Оглавление
-:figure-caption: Рисунок
-:table-caption: Таблица
+:description: Лабораторная работа №3
 :sectnums: |,all|
+include::Titl3.adoc[]
 
 == Введение
 
