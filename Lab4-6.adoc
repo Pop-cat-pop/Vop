@@ -1,0 +1,684 @@
+= Отчет по лабораторной работе № 4-6
+Анисимова А.М.    <КЭ-413>
+:toc:
+:toc-title: Оглавление
+:figure-caption: Рисунок
+:table-caption: Таблица
+:sectnums: |,all|
+:imagesdir: Images
+:important-caption: ВАЖНО!
+:note-caption: ЗАМЕЧАНИЕ
+
+include::Titl4-6.adoc[]
+
+== Разработка архитектуры программы
+
+=== Создание диаграммы классов
+
+Вся программа создана для управления диодами. Для наглядного примера составим диаграмму классов. Лабораторная работа №4-5 посвящена разработке архитектуры программы для удобного внесения дополнительных светодиодов и их управлении. Лабораторная работа №6 включает в себя добавление кнопки для переключения режимов мигания диодов. 
+
+.Структура проекта
+image::Lab4-6_1.png[]
+
+=== Разница между .h и .cpp.
+
+Файлы .h, или заголовочные файлы, используются для перечисления общедоступных (public) переменных экземпляра и методов в объявлении класса. Файлы .cpp, или файлы реализации, используются для фактической реализации этих методов и работы с переменными экземпляра.
+Разделение этих файлов объясняется тем, что файлы .h не компилируются в машинный код, тогда как файлы .cpp компилируются.
+
+Также во избежания ненужного расширения отчета по лабораторной работе все файлы будут описываться в формате заголовочных файлов .h. Следовательно, единственный файл .cpp является файл main.cpp. 
+
+=== Include guard
+
+Также для работы с заголовочными файлами нужно создать защиту от двойного включения файла.
+
+Директивы #ifndef, #define и #endif используются в заголовочных файлах для предотвращения многократного включения одного и того же файла в процессе компиляции. Это называется защитой от повторного включения (include guard).
+
+[source, cpp]
+----
+#ifndef FILENAME_H
+#define FILENAME_H
+...
+#endif
+----
+
+#ifndef, #define, и #endif предотвращают повторное включение файла. Это работает следующим образом:
+
+.   #ifndef FILENAME_H: Проверяет, определён ли макрос FILENAME_H.
+.   #define FILENAME_H: Если макрос не определён, он определяется, и содержимое файла компилируется.
+.   #endif: Закрывает условную конструкцию.
+
+Существует это для: защиты от повторного определения классов, функций и других элементов; ускорение компиляции - исключается обработка одного и того же кода несколько раз; совместимость - include guard используется во всех заголовочных файлах для поддержания общей структуры программы.
+
+== Led, ILed и LedConfig
+
+Сначала рассмотрим структуру наглядно от обычного класса Led и до IModeManager. 
+
+Класс ILed - интерфейсный класс, который является обобщенным классом Led. В этом коде он нужен скорее для читаемости и поддержания семантики кода. 
+
+.Файл *ILed.h*
+[source, cpp]
+----
+#ifndef ILED_H
+#define ILED_H
+
+class ILed {
+  public:
+  virtual void Light() = 0;
+  // virtual void Off() = 0;
+  virtual void Toggle() = 0;
+};
+
+#endif 
+----
+
+Класс Led - шаблонный класс. Шаблонный класс в C++ — это механизм, позволяющий создавать обобщённые классы, которые могут работать с различными типами данных. Шаблоны позволяют избежать дублирования кода для разных типов и обеспечивают типобезопасность.
+Для избежания ручного вписывания включения каждого светодиода отдельно прописывается.
+
+.Файл *Led.h*
+[source, cpp]
+----
+#ifndef LED_H
+#define LED_H
+#include "ILed.h" //for ILed
+
+template <typename TPort, int pinNumber> 
+class Led : public ILed 
+{ 
+public: 
+  void Light() override
+  {
+    TPort::ODR::Set(1 << pinNumber);
+  }
+  void Toggle() override 
+  {
+    TPort::ODR::Toggle(1 << pinNumber);
+  }
+};
+#endif 
+----
+
+Также есть класс LedConfig. Этот класс определяет тип tLeds и подключает необходимые зависимости (<array> и ILed.h). Основное предназначение этого файла — упростить использование массива светодиодов (или их интерфейсов) в программе, обеспечив гибкость и читаемость.
+
+.Файл *LedConfig.h*
+[source, cpp]
+----
+#ifndef LEDCONFIG_H
+#define LEDCONFIG_H
+#include <array> // for atd::array
+#include "ILed.h" //for ILed
+
+using tLeds = std::array<ILed*, 4>;
+
+#endif 
+----
+
+
+Благодаря Led.h можно лаконично записать в main.cpp:
+
+[source, cpp]
+----
+Led<GPIOA, 5> led1;
+Led<GPIOC, 9> led2;
+Led<GPIOC, 8> led3;
+Led<GPIOC, 5> led4;
+----
+
+Благодаря LedConfig.h можно все новые переменные в виде led1, led2, led3, led4 объединить в массив типа tLed:
+
+[source, cpp]
+----
+tLeds leds = {
+    &led1,
+    &led2,
+    &led3,
+    &led4
+};
+----
+
+== Modes, IMode и ModeConfig
+
+В нашей программе три режима переключения светодиодов:
+
+.   Переключение всех светодиодов (AllMode.h);
+
+.   Нарастающий бегущий огонь (TreeMode.h);
+
+.   Шахматное включение (ChessMode.h).
+
+Каждый из этих модов наследует IMode, в котором инициализированы начальное состояние и работа мода.
+ 
+.Файл *IMode.h*
+[source, cpp]
+----
+#ifndef IMODE_H
+#define IMODE_H
+
+class IMode
+{
+public:
+  virtual void Init() = 0;
+  virtual void Update() = 0;  
+};
+
+#endif 
+----
+
+Для каждого мода Init() и Update() реализуется по-своему. 
+
+Самый простой мод AllMode - В инициализации включаем все диоды, а в работе самого мода просто переключаем через один. 
+
+.Файл *AllMode.h*
+[source, cpp]
+----
+#ifndef ALLMODE_H
+#define ALLMODE_H
+#include "LedConfig.h" //for tLed
+#include "IMode.h" // for IMode
+
+class AllMode : public IMode
+{
+public:
+  AllMode(tLeds& ledsArr) : leds(ledsArr)
+  {
+  }
+
+  void Update() override 
+  {
+    for(auto it: leds)
+    {
+        it -> Toggle();
+    }
+  }
+  void Init() override 
+  {
+    for(auto it: leds)
+    {        
+        it -> Light();
+    }
+  }
+
+private:   
+   tLeds leds;
+};
+
+#endif 
+----
+
+TreeMode при появлении зажигает все диоды, а в своей работе переключает каждый диод по порядку.  
+
+.Файл *TreeMode.h*
+[source, cpp]
+----
+#ifndef TREEMODE_H
+#define TREEMODE_H
+
+class TreeMode : public IMode
+{
+public:
+  TreeMode(tLeds& ledsArr) : leds(ledsArr)
+  {
+  }
+  
+void Update() override
+  {
+    leds[currentLedIndex]->Toggle();
+    currentLedIndex++;
+    if(currentLedIndex == leds.size())
+    { 
+        currentLedIndex = 0;
+    }
+  }
+  
+  void Init() override
+  {
+    currentLedIndex = 0;
+    for(auto it: leds)
+    {
+      it -> Light();
+    }
+  }
+ 
+private: 
+   tLeds leds;
+   std::size_t currentLedIndex;
+  
+};
+#endif 
+----
+
+СhessMode в инициализации включает все диоды и через один выключают. В самой работе мода идет обычное переключение диодов.
+
+.Файл *ChessMode.h*
+[source, cpp]
+----
+#ifndef CHESSMODE_H
+#define CHESSMODE_H
+
+class ChessMode : public IMode
+{
+public:
+  ChessMode(tLeds& ledsArr) : leds(ledsArr)
+  {
+  }
+  
+void Update() override
+  {
+    for(auto it: leds)
+    {      
+      it -> Toggle();
+    }
+  } 
+  void Init() override
+  {
+    for(auto it: leds)
+    {
+      it -> Light();
+    }
+    
+    for(std::size_t i = 0; i < leds.size(); i++)
+    {
+      if ((i % 2) == 0)
+      { 
+        leds[i] -> Toggle();        
+      }; 
+    }  
+  }
+ 
+private: 
+   tLeds leds; 
+};
+#endif 
+----
+
+== ModeManager, IModeManager и ModeConfig
+
+IModeManager существует в этой программе для управления режимами работы диодов. ModeManager наследует IModeManager и реализует унаследованные функции. ModeConfig существует для реализации удобного объединения режимов в массив modes при помощи tMode.
+
+.Файл *IModeManager.h*
+[source, cpp]
+----
+#ifndef IMODEMANAGER_H
+#define IMODEMANAGER_H
+
+class IModeManager
+{
+public:   
+  virtual void InitMode() = 0;
+  virtual void UpdateMode() = 0;
+  virtual void SetNextMode() = 0;
+};
+
+#endif 
+----
+
+Класс, реализующий управление режимами:
+
+.Файл *ModeManager.h*
+[source, cpp]
+----
+#ifndef MODEMANAGER_H
+#define MODEMANAGER_H
+
+#include "IMode.h" // for IMode
+#include "ModeConfig.h" // for tModes
+#include "IModeManager.h" //for IModeManager
+
+class ModeManager : public IModeManager
+{ 
+public:
+  ModeManager(tModes& modesArr, std::size_t beginModeIndex) : modes(modesArr), currentMode(beginModeIndex)
+  {  
+  }
+
+  void InitMode() override
+  { 
+    modes[currentMode] -> Init();  
+  };
+ 
+  void UpdateMode() override
+  {
+    modes[currentMode] -> Update();   
+  };
+  void SetNextMode() override
+  { 
+    currentMode ++;
+    if (std:size(modes) > 3)
+    {
+      currentMode = 0;
+    }
+    modes[currentMode] -> Init();
+  };  
+
+private: 
+  tModes& modes;
+  std::size_t currentMode;   
+};
+
+#endif 
+----
+
+Как работает класс ModeManager. Для начала идет одноименный конструктор, который переопределяет входные значения в приватные поля класса (в modes и currentMode). Дальше идет инициализация мода, Init(). Это отсылает нас к унаследованным классам модов, которые инициализируются каждый по своему. Тоже самое и с методом Update().
+
+Самое важное это метод SetNextMode(). Эта функция перебирает по порядку моды и переключает на них. Также имеет ограничение на количество модов, а именно в размере 3 штук. После переключения мода сразу же идет его инициализация. 
+
+ModeConfig, как и LedConfig, переопределяет tMode для создания массива из модов. 
+
+.Файл *ModeConfig.h*
+[source, cpp]
+----
+#ifndef MODECONFIG_H
+#define MODECONFIG_H
+
+using tModes = std::array<IMode*, 3>;
+
+#endif 
+----
+
+== Button и IButton
+
+Кнопка появляется лишь в 6 лабораторной работе. 
+
+Также создаем класс самой кнопки и её интерфейс. Класс конфигурации не создаем, так как нет смысла объединять кнопки в массив.  
+
+.Файл *IButton.h*
+[source, cpp]
+----
+#ifndef IBUTTON_H
+#define IBUTTON_H
+
+class IButton
+{ 
+public: 
+  virtual bool IsPressed() = 0;
+};
+
+#endif
+----
+
+
+.Файл *Button.h*
+[source, cpp]
+----
+#ifndef BUTTON_H
+#define BUTTON_H
+#include "IButton.h" //for IButton
+
+template <typename TPort, int pinNumber> 
+class Button : public IButton
+{  
+public: 
+  bool IsPressed()
+  {
+    if ((TPort::IDR::Get() & (1 << pinNumber))  == 1)
+    {   
+      return true;  
+    } 
+    return false;
+  }
+};
+
+#endif
+----
+
+Класс Button является шаблонным классом, также как и Led. Принимаемые значения это регистр и пин где находится кнопка. 
+
+В методе IsPressed() идет проверка нажатия кнопки. Если порт, на котором находится кнопка выдает единицу и при этом пин с кнопкой тоже выдает единицу, то результат метода является true, иначе false.
+
+== Изменение частоты микроконтроллера
+
+Задание: установить максимально приближенное значение к 13,666 МГц. 
+
+Clock Control register (CR) Как уже упоминалось, системная тактовая частота для серии "STM32F411" может быть до 100 МГц. Для ее формирования используются 3 основных источника — HSI, HSE, PLL. Включение и выключение основных генераторов производится через регистр RCC_CR — Clock Control register.
+
+.Блок диаграмма микроконтроллера
+image::Lab4-6_2.png[]
+
+PLL Внутренний источник PLL тактируется от внешнего или внутреннего высокочастотных генераторов (HSE либо HSI). С помощью регистров PLLM, PLLN,PLLP можно подобрать любую частоту до 100 Мгц включительно по формуле:
+
+f = f(PLL clock input) × (PLLN / PLLM) /PLLP
+
+Регистр управления частотой.
+
+Clock Control register (CR) Как уже упоминалось, системная тактовая частота для серии "STM32F411" может быть до 100 МГц. Для ее формирования используются 3 основных источника — HSI, HSE, PLL. Включение и выключение основных генераторов производится через регистр RCC_CR — Clock Control register.
+
+Значение по умолчанию: 0x0000 XX81:
+
+.Регистр управления частотой
+image::Lab4-6_3.png[]
+
+=== PLLP
+
+Биты 17:16 PLLP: Основной коэффициент деления PLL (PLL) для главного системного тактового сигнала.
+Устанавливается и сбрасывается программно для управления частотой выходного сигнала общего PLL. Эти биты можно записывать только если PLL отключён.
+
+Внимание: Программное обеспечение должно правильно установить эти биты, чтобы частота не превышала 100 МГц в этом домене.
+Выходная частота PLL = Частота VCO / PLLP, где PLLP может принимать значения 2, 4, 6 или 8.
+
+*   00: PLLP = 2
+*   01: PLLP = 4
+*   10: PLLP = 6
+*   11: PLLP = 8
+
+=== PLLN
+
+Биты 14:6 PLLN: Основной множитель PLL (PLL) для VCO (вольт-управляемого генератора).
+Устанавливается и сбрасывается программно для управления множителем VCO. Эти биты можно записывать только при отключённом PLL. Доступны только операции записи полуслова или слова.
+
+Внимание: Программное обеспечение должно правильно установить эти биты, чтобы частота VCO находилась в диапазоне от 100 до 432 МГц. (См. также Раздел 6.3.20: RCC PLLI2S Configuration Register (RCC_PLLI2SCFGR)).
+
+Формула:
+Выходная частота VCO = Входная частота VCO × PLLN
+(где 50 ≤ PLLN ≤ 432)
+
+Примеры конфигурации:
+
+*   000000000: PLLN = 0, неправильная конфигурация
+*   000000001: PLLN = 1, неправильная конфигурация
+
+...
+
+*   000110010: PLLN = 50
+
+...
+
+*   011000011: PLLN = 99
+*   011001100: PLLN = 100
+
+...
+
+*   110110000: PLLN = 432
+*   110110001: PLLN = 433, неправильная конфигурация
+
+...
+
+*   111111111: PLLN = 511, неправильная конфигурация
+
+Примечание: Множители возможны только для входной частоты VCO выше 1 МГц. Однако следует учесть минимальную частоту VCO, указанную выше.
+
+=== PLLM
+
+Биты 5:0 PLLM: Коэффициент деления входного тактового сигнала основного PLL (PLL).
+Устанавливается и сбрасывается программно для деления входного сигнала PLL перед подачей на VCO. Эти биты можно записывать только при отключённом PLL.
+
+Внимание: Программное обеспечение должно правильно установить эти биты, чтобы частота входного сигнала VCO находилась в диапазоне от 1 до 2 МГц. Рекомендуется выбирать частоту 2 МГц, чтобы минимизировать джиттер PLL.
+
+Формула:
+Частота входного сигнала VCO = Частота входного тактового сигнала PLL / PLLM
+(где 2 ≤ PLLM ≤ 63)
+
+Примеры конфигурации:
+
+*   000000: PLLM = 0, неправильная конфигурация
+*   000001: PLLM = 1, неправильная конфигурация
+*   000010: PLLM = 2
+*   000011: PLLM = 3
+*   000100: PLLM = 4
+
+...
+
+*   111110: PLLM = 62
+*   111111: PLLM = 63
+
+=== Расчёт новой частоты
+
+Для запуска PLL используем внешнее тактирование HSE = 8'000'000 Гц
+
+Сложнее всего подобрать PLLP, т.к. у него меньше разброс - всего четыре значения. Возьмём PLLP = 2. Второе значение возьмём PLLM = 60. 
+
+PLLN выводим из формулы: 13'666'000 = 8'000'000 × (PLLN / 60) / 2. Получаем значение PLLN = 200.
+
+В результате переводим значения в 16-ную систему исчисления. 
+
+*   PLLP = 2 = 00   ->          RCC::PLLCFGR::PLLP0::Set(00);
+*   PLLM = 60 = 0b00111100  ->  RCC::PLLCFGR::PLLM0::Set(0b00111100);
+*   PLLN = 200 = 0b11001000 ->  RCC::PLLCFGR::PLLN0::Set(0b11001000);
+
+Результирующий PLL = 13'333'000U.
+
+.Часть кода main.cpp
+[source, cpp]
+----
+std::uint32_t SystemCoreClock = 13'333'000U;
+extern "C" {
+  int __low_level_init(void)
+  {
+    RCC::PLLCFGR::PLLSRC::HseSource::Set();
+    RCC::CR::PLLON::On::Set(); // Включение PLL
+    
+    while (RCC::CR::PLLRDY::Unclocked::IsSet()) // Проверка готовности
+    {
+    }
+    RCC::CFGR::SW::Pll::Set(); // Выбор PLL в качестве системной частоты
+    
+    while (!RCC::CFGR::SWS::Pll::IsSet()) // Проверка готовности
+    {
+    }
+
+    //Настройка на частоту 13,666 МГЦ (13,333)
+    RCC::PLLCFGR::PLLN0::Set(0b11001000);
+    RCC::PLLCFGR::PLLP0::Set(00);
+    RCC::PLLCFGR::PLLM0::Set(0b00111100);
+    STK::CTRL::CLKSOURCE::CpuClock::Set();
+    
+    return 1;
+  }
+}
+----
+
+
+== Итоговый код "main.cpp"
+
+.Файл *main.cpp*
+[source, cpp]
+----
+#include "rccregisters.hpp" // for RCC
+#include "gpioaregisters.hpp" // for GPIOA
+#include "gpiocregisters.hpp" // for GPIOР
+#include <array>
+#include "tim2registers.hpp" // for TIM2
+#include "stkregisters.hpp" //for SystemTimers
+#include "scbregisters.hpp" //for ICSR регистр
+
+#include "Led.h" // Класс Led
+#include "AllMode.h" // Класс AllMode
+#include "TreeMode.h" // Класс TreeMode
+#include "ChessMode.h" // Класс ChessMode
+#include "ModeConfig.h" //Конфигурация Mode
+#include "ModeManager.h" // for ModeManager
+#include "Button.h"
+
+std::uint32_t SystemCoreClock = 1''000U;
+
+extern "C" {
+  int __low_level_init(void)
+  {
+    RCC::PLLCFGR::PLLSRC::HseSource::Set();
+    RCC::CR::PLLON::On::Set(); // Включение PLL
+    
+    while (RCC::CR::PLLRDY::Unclocked::IsSet()) // Проверка готовности
+    {
+    }
+    RCC::CFGR::SW::Pll::Set(); // Выбор PLL в качестве системной частоты
+    
+    while (!RCC::CFGR::SWS::Pll::IsSet()) // Проверка готовности
+    {
+    }
+
+    //Настройка на частоту 13,666 МГЦ (13,333)
+    RCC::PLLCFGR::PLLN0::Set(0b11001000);
+    RCC::PLLCFGR::PLLP0::Set(00);
+    RCC::PLLCFGR::PLLM0::Set(0b00111100);
+    STK::CTRL::CLKSOURCE::CpuClock::Set();
+    
+    return 1;
+  }
+  
+}
+void delay(int cycles)
+{
+  for(int i = 0; i < cycles; ++i)    
+  {   
+    // asm volatile("");
+  }    
+}
+int main()
+{  
+  // Подать тактирование на порт А
+  RCC::AHB1ENR::GPIOAEN::Enable::Set() ;
+  //Подать тактирование на порт С
+  RCC::AHB1ENR::GPIOCEN::Enable::Set() ;
+  //Порт А.5 на вывод
+  GPIOA::MODER::MODER5::Output::Set() ;
+  //Порт С.5, С.8, С.9 на вывод
+  GPIOC::MODER::MODER5::Output::Set() ;
+  GPIOC::MODER::MODER8::Output::Set() ;
+  GPIOC::MODER::MODER9::Output::Set() ;
+  //Порт С.13 на ввод
+  GPIOC::MODER::MODER13::Input::Set();
+  
+  Led<GPIOC, 5> led1;
+  Led<GPIOC, 8> led2;
+  Led<GPIOC, 9> led3;
+  Led<GPIOA, 5> led4;
+
+  Button<GPIOC, 13> button1;
+  tLeds leds = {
+    &led1,
+    &led2,
+    &led3,
+    &led4};
+    
+  ChessMode chessmode(leds);
+  AllMode allmode(leds);
+  TreeMode treemode(leds);
+  
+  tMode modes = {
+    &chessmode,
+    &allmode,
+    &treemode
+  };
+
+  ModeManager modeManager(modes);
+  modeManager.InitMode();
+  
+  for(;;)
+  {
+    modeManager.UpdateCurrentMode();
+    if (button.IsPressed())
+    {
+      modeManager.SetNextMode();
+    }
+    delay(10000);
+  }
+  
+  return 1;
+}
+----
+
+== Вывод
+
+В лабораторных работках 4-5 была реализована программа, архитектура которой реализована на основе классовой диаграммы, приведённой в самом начале. 
+В лабораторной работе 6 была подключена кнопка для управления режимами работы светодиодов. Была произведена настройка тактирования PLL от внешнего кварца (HSE).
+
+
+
