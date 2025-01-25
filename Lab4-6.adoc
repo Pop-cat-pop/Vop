@@ -9,6 +9,8 @@
 :important-caption: ВАЖНО!
 :note-caption: ЗАМЕЧАНИЕ
 
+include::Titl4-6.adoc[]
+
 == Разработка архитектуры программы
 
 === Создание диаграммы классов
@@ -340,7 +342,7 @@ public:
   void SetNextMode() override
   { 
     currentMode ++;
-    if (currentMode > 3)
+    if (std:size(modes) > 3)
     {
       currentMode = 0;
     }
@@ -407,7 +409,7 @@ class Button : public IButton
 public: 
   bool IsPressed()
   {
-    if (TPort::IDR::Get() & (1 << pinNumber)  == 1)
+    if ((TPort::IDR::Get() & (1 << pinNumber))  == 1)
     {   
       return true;  
     } 
