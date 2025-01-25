@@ -1,11 +1,15 @@
 = Отчет по лабораторной работе №7
+
 Анисимова А.М.    <КЭ-413>
+
+:description: Лабораторная работа №7
 :toc:
 :toc-title: Оглавление
 :figure-caption: Рисунок
 :table-caption: Таблица
 :sectnums: |,all|
 :imagesdir: Lab7Image
+
 
 Целью 7 работы является изменение функции delay(). 
 
@@ -167,7 +171,7 @@ void delay(std::uint32_t timeInMs)
     8. Запуск таймера
   TIM2::CR1::CEN::Enable::Set();
     9. Ожидание завершения задержки
-  while(TIM5::SR::UIF::NoInterruptPending::IsSet())
+  while(TIM2::SR::UIF::NoInterruptPending::IsSet())
   {
   }
     10. Остановка таймера
