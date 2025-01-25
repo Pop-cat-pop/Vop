@@ -10,6 +10,7 @@
 :sectnums: |,all|
 :imagesdir: Lab7Image
 
+include::Titl7.adoc[]
 
 Целью 7 работы является изменение функции delay(). 
 
