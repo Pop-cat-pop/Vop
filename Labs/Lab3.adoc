@@ -1,9 +1,22 @@
 = Отчет по лабораторной работе №3
+
+:autor:                 Анисимова А.М.
+:numGroup:              КЭ-413
+:numLab:                3
+:checker:               С.В. Колодий
+:year:                  2024
+
 :toc:
-:toc-title: Оглавление
-:description: Лабораторная работа №3
-:sectnums: |,all|
-include::Titl3.adoc[]
+:imagesdir:             Images
+:toc-title:             Оглавление
+:figure-caption:        Рисунок
+:table-caption:         Таблица
+:sectnums:              |,all|
+
+[attributes]
+====
+include::Titl.adoc[]
+====
 
 == Введение
 

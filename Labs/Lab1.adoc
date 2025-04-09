@@ -1,13 +1,26 @@
 = Отчет по лабораторной работе №1
-Анисимова А.М.    <КЭ-413>
-:imagesdir: images
-:toc:
-:toc-title: Оглавление
-:figure-caption: Рисунок
-:table-caption: Таблица
-:sectnums: |,all|
 
-include::Titl1.adoc[]
+:autor:                 Анисимова А.М.
+:numGroup:              КЭ-413
+:numLab:                1
+:checker:               С.В. Колодий
+:year:                  2024
+
+:toc:
+:imagesdir:             Images
+:toc-title:             Оглавление
+:figure-caption:        Рисунок
+:table-caption:         Таблица
+:sectnums:              |,all|
+
+[attributes]
+====
+include::Titl.adoc[]
+====
+
+
+
+
 
 == Процесс разработки ПО
 
