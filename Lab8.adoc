@@ -1,1 +1,189 @@
+= Отчет по лабораторной работе №8
+
+:autor:                 А.М. Анисимова 
+:numGroup:              КЭ-413
+:numLab:                8
+:checker:               С.В. Колодий
+:year:                  2024
+
+:toc:
+:imagesdir:             Images
+:toc-title:             Оглавление
+:figure-caption:        Рисунок
+:table-caption:         Таблица
+:sectnums:              |,all|
+
+[attributes]
+====
+include::Titl8.adoc[]
+====
+
+
+
+
+
+
+[source,cpp]
+.Класс АЦП
+----
+class ADC_Manager
+{
+public:
+    // Конструктор — базовая инициализация АЦП
+    ADC_Manager()
+    {
+        // 1) Включить тактирование (RCC->APB2ENR |= RCC_APB2ENR_ADC1EN).
+        // 2) Настроить общий регистр (ADC->CCR) — предделитель и при необходимости бит TSVREFE.
+        // 3) Установить параметры в CR1 и CR2: одиночный режим, 12 бит, выравнивание вправо и т.д.
+        // 4) Установить бит ADON для включения АЦП.
+    }
+
+    // Метод чтения значения на указанном канале
+    uint16_t readChannel(uint8_t channel)
+    {
+        // 1) Настроить время выборки (SMPRx) для данного канала.
+        // 2) Записать номер канала в SQR (L=0, SQ1 = channel).
+        // 3) Запустить преобразование (бит SWSTART).
+        // 4) Дождаться флага EOC.
+        // 5) Прочитать результат из DR и вернуть его.
+        return 0; // В реальном коде здесь вернётся считанное значение.
+    }
+};
+----
+
+
+[source,cpp]
+.main
+----
+#include "rccregisters.hpp"    // for RCC
+#include "gpioaregisters.hpp"  // for GPIOA
+#include "gpiocregisters.hpp"  // for GPIOC
+#include <array>
+#include <cstdint>
+#include "adc1registers.hpp"   // for ADC CR1
+#include <iostream>
+
+#include "stkregisters.hpp"    // for SystemTimer
+#include "scbregisters.hpp"    // for ISCR register
+#include "tim2registers.hpp"
+
+#include "ILed.h"
+#include "Led.h"
+#include "ledconfig.h"
+
+#include "IMode.h"
+#include "allmode.h"
+#include "treemode.h"
+#include "chessmode.h"
+#include "modeconfig.h"
+#include "IButton.h"
+#include "Button.h"
+#include "IModeManager.h"
+#include "modeconfig.h"
+#include "ModeManager.h"
+#include "ButtonExti.h"
+#include "ModeManagerConfig.h"
+#include "syscfgregisters.hpp"
+#include "extiregisters.hpp"
+#include "nvicregisters.hpp"   // for NVIC
+#include "tim5registers.hpp"   // for TIM5
+
+std::uint32_t SystemCoreClock = 8'000'000U;
+
+extern "C" {
+int __low_level_init(void)
+{
+  RCC::CR::HSION::On::Set();
+  // while (RCC::CR::HSIRDY::NotReady::IsSet()) { }
+  RCC::CFGR::SW::Hsi::Set();
+  // while (!RCC::CFGR::SWS::Hsi::IsSet()) { }
+
+  RCC::APB2ENR::SYSCFGEN::Enable::Set();
+  STK::CTRL::CLKSOURCE::CpuClock::Set();
+  RCC::APB1ENR::TIM5EN::Enable::Set();
+
+  NVIC::ISER1::Write(1 << 18U);
+
+  const auto TimerDivider = SystemCoreClock / 1'000U;
+
+  TIM5::PSC::Write(TimerDivider);
+  TIM5::CR1::URS::Value1::Set();
+  TIM5::ARR::Write(500U);
+  TIM5::SR::UIF::Set(0);
+  TIM5::CNT::Write(0);
+  TIM5::DIER::UIE::Value1::Set();
+  TIM5::CR1::CEN::Enable::Set();
+
+  return 1;
+}
+}
+
+bool isInterruptHappened = false;
+
+int main()
+{
+  // Подаём тактирование на порт A
+  RCC::AHB1ENR::GPIOAEN::Enable::Set();
+  // Подаём тактирование на порт C
+  RCC::AHB1ENR::GPIOCEN::Enable::Set();
+
+  // Порт A.5 на вывод
+  GPIOA::MODER::MODER5::Output::Set();
+  // Порт C.5, C.8, C.9 на вывод
+  GPIOC::MODER::MODER5::Output::Set();
+  GPIOC::MODER::MODER8::Output::Set();
+  GPIOC::MODER::MODER9::Output::Set();
+
+  // Создаём объект кнопки, привязанной к выводу PC13 (EXTI)
+  ButtonExti<GPIOC, 13> button;
+
+  // Создаём объекты светодиодов
+  Led<GPIOC, 5> led1;
+  Led<GPIOC, 8> led2;
+  Led<GPIOC, 9> led3;
+  Led<GPIOA, 5> led4;
+
+  // Собираем их в массив
+  tLeds leds = { &led1, &led2, &led3, &led4 };
+
+  // Создаём разные режимы (пример демонстрационной логики)
+  AllMode allmode(leds);
+  ChessMode chessmode(leds);
+  TreeMode treemode(leds);
+
+  // Список режимов для диспетчера
+  tMode MODES = {
+    &allmode,
+    &chessmode,
+    &treemode
+  };
+
+  // Создаём диспетчер режимов
+  ModeManager modeManager(MODES);
+  modeManager.InitModeManager();
+
+  // Основной цикл
+  for(;;)
+  {
+    if (isInterruptHappened)
+    {
+      // Обновление состояния режимов
+      modeManager.UpdateModeManager();
+
+      // Проверяем нажатие кнопки
+      if(button.onClick())
+      {
+        // Переключаемся на следующий режим
+        modeManager.SwitchModeManager();
+      }
+      isInterruptHappened = false;
+    }
+  }
+
+  return 1;
+}
+----
+
+
+
 
